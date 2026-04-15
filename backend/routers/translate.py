@@ -4,19 +4,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from services.groq_service import transcribe_audio, translate_text
 
-# ── pydub: set ffmpeg path explicitly so it works even before shell PATH reload ──
-_FFMPEG_BIN = os.path.join(
-    os.environ.get("LOCALAPPDATA", ""),
-    "Microsoft", "WinGet", "Packages",
-    "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe",
-    "ffmpeg-8.1-full_build", "bin",
-)
-_FFMPEG_EXE  = os.path.join(_FFMPEG_BIN, "ffmpeg.exe")
-_FFPROBE_EXE = os.path.join(_FFMPEG_BIN, "ffprobe.exe")
-
-if os.path.isdir(_FFMPEG_BIN):
-    if _FFMPEG_BIN not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = _FFMPEG_BIN + os.pathsep + os.environ.get("PATH", "")
+# Code đã được dọn khỏi hardcode Windows. Sử dụng imageio-ffmpeg trực tiếp.
 
 router = APIRouter()
 
@@ -50,8 +38,11 @@ def _convert_to_wav(src_path: str) -> str:
     """Convert audio file to .wav using pydub. Returns path to new .wav temp file."""
     try:
         from pydub import AudioSegment
+        import imageio_ffmpeg
+        # Gán đường dẫn ffmpeg của imageio-ffmpeg cho pydub (hoạt động tốt trên mọi OS không cần cài os-level ffmpeg)
+        AudioSegment.converter = imageio_ffmpeg.get_ffmpeg_exe()
     except ImportError:
-        raise RuntimeError("pydub is not installed. Run: pip install pydub")
+        raise RuntimeError("pydub or imageio-ffmpeg is not installed. Run: pip install pydub imageio-ffmpeg")
 
     ext = os.path.splitext(src_path)[1].lower().lstrip(".")
     # pydub uses format names without the dot
