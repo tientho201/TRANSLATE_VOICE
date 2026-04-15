@@ -1,10 +1,17 @@
 import tempfile
 import os
+import subprocess
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from services.groq_service import transcribe_audio, translate_text
 
-# Code đã được dọn khỏi hardcode Windows. Sử dụng imageio-ffmpeg trực tiếp.
+# Lấy đường dẫn ffmpeg từ imageio-ffmpeg (Python package, không cần cài system ffmpeg)
+def _get_ffmpeg_exe() -> str:
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        return "ffmpeg"  # fallback nếu imageio-ffmpeg chưa cài
 
 router = APIRouter()
 
@@ -35,25 +42,33 @@ AUDIO_EXTENSIONS = GROQ_SUPPORTED | CONVERTIBLE
 
 
 def _convert_to_wav(src_path: str) -> str:
-    """Convert audio file to .wav using pydub. Returns path to new .wav temp file."""
-    try:
-        from pydub import AudioSegment
-        import imageio_ffmpeg
-        # Gán đường dẫn ffmpeg của imageio-ffmpeg cho pydub (hoạt động tốt trên mọi OS không cần cài os-level ffmpeg)
-        AudioSegment.converter = imageio_ffmpeg.get_ffmpeg_exe()
-    except ImportError:
-        raise RuntimeError("pydub or imageio-ffmpeg is not installed. Run: pip install pydub imageio-ffmpeg")
-
-    ext = os.path.splitext(src_path)[1].lower().lstrip(".")
-    # pydub uses format names without the dot
-    fmt = ext if ext not in ("3gp", "3gpp") else "3gp"
-
-    audio = AudioSegment.from_file(src_path, format=fmt)
+    """Convert audio file to .wav using ffmpeg directly (via imageio-ffmpeg). No pydub needed."""
+    ffmpeg_exe = _get_ffmpeg_exe()
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as out_tmp:
         out_path = out_tmp.name
 
-    audio.export(out_path, format="wav")
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg_exe, "-y",       # -y: overwrite output nếu tồn tại
+                "-i", src_path,         # input file
+                "-ar", "16000",         # sample rate 16kHz (tối ưu cho Whisper)
+                "-ac", "1",             # mono channel
+                "-f", "wav",            # output format
+                out_path,
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            err = result.stderr.decode(errors="ignore")[-500:]  # lấy 500 ký tự cuối
+            raise RuntimeError(f"ffmpeg exited with code {result.returncode}: {err}")
+    except FileNotFoundError:
+        raise RuntimeError(
+            f"ffmpeg not found at '{ffmpeg_exe}'. Make sure imageio-ffmpeg is installed: pip install imageio-ffmpeg"
+        )
+
     return out_path
 
 
