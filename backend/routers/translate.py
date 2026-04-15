@@ -18,7 +18,7 @@ router = APIRouter()
 SUPPORTED_LANGUAGES = {
     "vi": "Vietnamese",
     "en": "English",
-    "zh": "Chinese",
+    "zh": "Simplified Chinese",
     "ja": "Japanese",
     "ko": "Korean",
     "fr": "French",

@@ -31,12 +31,19 @@ async def transcribe_audio(file_path: str, language: str) -> str:
     """
     client = get_groq_client()
 
+    # Whisper parameter kwargs
+    kwargs = {}
+    if language == "zh":
+        # Force Whisper to use Simplified Chinese instead of Traditional Chinese
+        kwargs["prompt"] = "请使用简体中文。"
+
     with open(file_path, "rb") as audio_file:
         response = await client.audio.transcriptions.create(
             file=(os.path.basename(file_path), audio_file),
             model="whisper-large-v3",
             language=language,
             response_format="text",
+            **kwargs
         )
 
     # response is a plain string when response_format="text"
