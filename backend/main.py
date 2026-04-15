@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import translate
+from fastapi.staticfiles import StaticFiles
+from routers import translate, tts
 
 app = FastAPI(
     title="Voice Translate API",
@@ -17,6 +18,11 @@ app.add_middleware(
 )
 
 app.include_router(translate.router, prefix="/api/v1", tags=["Translate"])
+app.include_router(tts.router, prefix="/api/v1", tags=["TTS"])
+
+import os
+os.makedirs("static/audio", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/health")

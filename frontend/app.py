@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import io
+import os 
+from dotenv import load_dotenv, find_dotenv
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -145,16 +147,31 @@ st.markdown(
 
     /* Divider */
     hr { border-color: rgba(255,255,255,0.08) !important; }
+
+    /* Custom Streamlit Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: rgba(255,255,255,0.05);
+        border-radius: 8px 8px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(167,139,250,0.2) !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-import os 
-from dotenv import load_dotenv , find_dotenv
 load_dotenv(find_dotenv())
-BACKEND_URL = os.getenv("BACKEND_URL")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 LANGUAGES = {
     "🇻🇳 Vietnamese": "vi",
@@ -177,7 +194,7 @@ LANG_NAMES = list(LANGUAGES.keys())
 LANG_CODES = list(LANGUAGES.values())
 
 
-# ── Helper ────────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def call_translate_api(audio_bytes: bytes, filename: str, src_code: str, tgt_code: str):
     """POST to FastAPI /api/v1/translate and return JSON response."""
     files = {"audio_file": (filename, io.BytesIO(audio_bytes), "audio/mpeg")}
@@ -186,187 +203,231 @@ def call_translate_api(audio_bytes: bytes, filename: str, src_code: str, tgt_cod
     response.raise_for_status()
     return response.json()
 
+def call_tts_api(text: str, src_code: str, tgt_code: str):
+    """POST to FastAPI /api/v1/tts and return JSON response."""
+    data = {"text": text, "source_language": src_code, "target_language": tgt_code}
+    response = requests.post(f"{BACKEND_URL}/api/v1/tts", data=data, timeout=120)
+    response.raise_for_status()
+    return response.json()
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 # Hero
 st.markdown('<h1 class="hero-title">🌐 Voice Translator</h1>', unsafe_allow_html=True)
 st.markdown(
-    '<p class="hero-subtitle">Upload audio → Transcribe → Translate — powered by Groq AI</p>',
+    '<p class="hero-subtitle">Upload audio → Transcribe → Translate — powered by Groq AI & Edge TTS</p>',
     unsafe_allow_html=True,
 )
 
-# ── Step 1: Language selection ────────────────────────────────────────────────
-with st.container():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="step-badge">STEP 1 — LANGUAGE</div>', unsafe_allow_html=True)
+tab_stt, tab_tts = st.tabs(["🎙️ Dịch Giọng Nói (STT)", "🔊 Tạo Giọng Lồng Tiếng (TTS)"])
 
-    col1, col_arrow, col2 = st.columns([5, 1, 5])
+# ==============================================================================
+# TAB 1: STT
+# ==============================================================================
+with tab_stt:
+    with st.container():
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="step-badge">STEP 1 — LANGUAGE</div>', unsafe_allow_html=True)
 
-    with col1:
-        st.markdown('<div class="section-label">🎤 Ngôn ngữ nguồn</div>', unsafe_allow_html=True)
-        src_lang_name = st.selectbox(
-            label="source_lang",
-            options=LANG_NAMES,
-            index=0,
-            key="src_lang",
-            label_visibility="collapsed",
-        )
+        col1, col_arrow, col2 = st.columns([5, 1, 5])
+        with col1:
+            st.markdown('<div class="section-label">🎤 Ngôn ngữ nguồn</div>', unsafe_allow_html=True)
+            src_lang_name = st.selectbox(
+                label="source_lang",
+                options=LANG_NAMES,
+                index=0,
+                key="src_lang",
+                label_visibility="collapsed",
+            )
+        with col_arrow:
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center;font-size:1.5rem;color:#a78bfa;'>→</div>", unsafe_allow_html=True)
+        with col2:
+            st.markdown('<div class="section-label">🌍 Ngôn ngữ đích</div>', unsafe_allow_html=True)
+            available_targets = [n for n in LANG_NAMES if n != src_lang_name]
+            tgt_lang_name = st.selectbox(
+                label="target_lang",
+                options=available_targets,
+                index=0,
+                key="tgt_lang",
+                label_visibility="collapsed",
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    with col_arrow:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown(
-            "<div style='text-align:center;font-size:1.5rem;color:#a78bfa;'>→</div>",
-            unsafe_allow_html=True,
-        )
+    src_code = LANGUAGES[src_lang_name]
+    tgt_code = LANGUAGES[tgt_lang_name]
 
-    with col2:
-        st.markdown('<div class="section-label">🌍 Ngôn ngữ đích</div>', unsafe_allow_html=True)
-        # Default target = English (index 1)
-        default_tgt = LANG_NAMES[1] if LANG_NAMES[0] == src_lang_name else LANG_NAMES[0]
-        available_targets = [n for n in LANG_NAMES if n != src_lang_name]
-        tgt_lang_name = st.selectbox(
-            label="target_lang",
-            options=available_targets,
-            index=0,
-            key="tgt_lang",
-            label_visibility="collapsed",
-        )
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-src_code = LANGUAGES[src_lang_name]
-tgt_code = LANGUAGES[tgt_lang_name]
-
-# ── Step 2: Audio upload or URL ───────────────────────────────────────────────
-with st.container():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="step-badge">STEP 2 — AUDIO</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">📁 Nguồn âm thanh</div>', unsafe_allow_html=True)
-
-    input_method = st.radio(
-        "Nguồn âm thanh", 
-        ["Tải lên file", "Nhập URL"], 
-        horizontal=True, 
-        label_visibility="collapsed"
-    )
-
-    uploaded_file = None
-    audio_url = ""
-
-    if input_method == "Tải lên file":
-        uploaded_file = st.file_uploader(
-            label="audio_uploader",
-            type=["mp3", "mp4", "wav", "m4a", "webm", "ogg", "flac", "mpeg", "mpga", "aac", "wma", "amr"],
-            label_visibility="collapsed",
-            key="audio_upload",
-        )
-        if uploaded_file:
-            st.audio(uploaded_file, format=f"audio/{uploaded_file.name.split('.')[-1]}")
-    else:
-        audio_url = st.text_input("Audio URL", placeholder="https://example.com/audio.mp3", label_visibility="collapsed")
-        if audio_url:
-            st.audio(audio_url)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ── Step 3: Translate ─────────────────────────────────────────────────────────
-with st.container():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="step-badge">STEP 3 — TRANSLATE</div>', unsafe_allow_html=True)
-
-    translate_btn = st.button("🚀 Transcribe & Translate", use_container_width=True)
-
-    if translate_btn:
-        if input_method == "Tải lên file" and uploaded_file is None:
-            st.warning("⚠️ Vui lòng tải lên file âm thanh trước.")
-        elif input_method == "Nhập URL" and not audio_url:
-            st.warning("⚠️ Vui lòng nhập URL âm thanh trước.")
+    with st.container():
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="step-badge">STEP 2 — AUDIO</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">📁 Nguồn âm thanh</div>', unsafe_allow_html=True)
+        input_method = st.radio("Nguồn âm thanh", ["Tải lên file", "Nhập URL"], horizontal=True, label_visibility="collapsed", key="stt_input")
+        
+        uploaded_file = None
+        audio_url = ""
+        if input_method == "Tải lên file":
+            uploaded_file = st.file_uploader(
+                label="audio_uploader",
+                type=["mp3", "mp4", "wav", "m4a", "webm", "ogg", "flac", "mpeg", "mpga", "aac", "wma", "amr"],
+                label_visibility="collapsed",
+                key="audio_upload",
+            )
+            if uploaded_file:
+                st.audio(uploaded_file, format=f"audio/{uploaded_file.name.split('.')[-1]}")
         else:
-            with st.spinner("🔄 Đang xử lý audio..."):
-                try:
-                    if input_method == "Nhập URL":
-                        # Download audio from URL
-                        dl_res = requests.get(audio_url, timeout=30)
-                        dl_res.raise_for_status()
-                        audio_bytes = dl_res.content
-                        
-                        # Try to guess a filename for backend
-                        filename = audio_url.split("/")[-1]
-                        if not filename or "." not in filename:
-                            filename = "audio_from_url.mp3"
-                    else:
-                        audio_bytes = uploaded_file.getvalue()
-                        filename = uploaded_file.name
+            audio_url = st.text_input("Audio URL", placeholder="https://example.com/audio.mp3", label_visibility="collapsed", key="stt_url")
+            if audio_url:
+                st.audio(audio_url)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-                    result = call_translate_api(
-                        audio_bytes=audio_bytes,
-                        filename=filename,
-                        src_code=src_code,
-                        tgt_code=tgt_code,
-                    )
+    with st.container():
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="step-badge">STEP 3 — TRANSLATE</div>', unsafe_allow_html=True)
+        translate_btn = st.button("🚀 Transcribe & Translate", use_container_width=True, key="stt_btn")
 
-                    st.session_state["last_result"] = result
-                    st.success("✅ Dịch thành công!")
+        if translate_btn:
+            if input_method == "Tải lên file" and uploaded_file is None:
+                st.warning("⚠️ Vui lòng tải lên file âm thanh trước.")
+            elif input_method == "Nhập URL" and not audio_url:
+                st.warning("⚠️ Vui lòng nhập URL âm thanh trước.")
+            else:
+                with st.spinner("🔄 Đang xử lý audio..."):
+                    try:
+                        if input_method == "Nhập URL":
+                            dl_res = requests.get(audio_url, timeout=30)
+                            dl_res.raise_for_status()
+                            audio_bytes = dl_res.content
+                            filename = audio_url.split("/")[-1]
+                            if not filename or "." not in filename:
+                                filename = "audio_from_url.mp3"
+                        else:
+                            audio_bytes = uploaded_file.getvalue()
+                            filename = uploaded_file.name
 
-                except requests.exceptions.ConnectionError:
-                    st.error("❌ Không thể kết nối. Kiểm tra URL hoặc chắc chắn FastAPI đang chạy tại `localhost:8000`.")
-                    st.session_state.pop("last_result", None)
-                except requests.exceptions.HTTPError as e:
-                    # If it's the backend call error:
-                    if hasattr(e, 'response') and e.response is not None:
-                        try:
-                            detail = e.response.json().get("detail", str(e))
-                        except Exception:
-                            detail = str(e)
-                        st.error(f"❌ Lỗi từ server hoặc ảnh URL: {detail}")
-                    else:
-                        st.error(f"❌ Lỗi HTTP: {str(e)}")
-                    st.session_state.pop("last_result", None)
-                except Exception as e:
-                    st.error(f"❌ Lỗi không xác định: {str(e)}")
-                    st.session_state.pop("last_result", None)
+                        result = call_translate_api(audio_bytes, filename, src_code, tgt_code)
+                        st.session_state["last_result"] = result
+                        st.success("✅ Dịch thành công!")
 
-    st.markdown("</div>", unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"❌ Lỗi: {str(e)}")
+                        st.session_state.pop("last_result", None)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-# ── Results ───────────────────────────────────────────────────────────────────
-if "last_result" in st.session_state:
-    res = st.session_state["last_result"]
+    if "last_result" in st.session_state:
+        res = st.session_state["last_result"]
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="step-badge">RESULT</div>', unsafe_allow_html=True)
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            st.markdown(f'<div class="section-label">🎙️ Transcription ({res.get("source_language", "")})</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="result-box">{res.get("transcribed_text", "")}</div>', unsafe_allow_html=True)
+        with col_r2:
+            st.markdown(f'<div class="section-label">🌍 Translation ({res.get("target_language", "")})</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="result-box translated">{res.get("translated_text", "")}</div>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("📋 Copy text"):
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                st.text_area("Transcription", value=res.get("transcribed_text", ""), height=120, key="copy_src")
+            with col_c2:
+                st.text_area("Translation", value=res.get("translated_text", ""), height=120, key="copy_tgt")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="step-badge">RESULT</div>', unsafe_allow_html=True)
 
-    col_r1, col_r2 = st.columns(2)
+# ==============================================================================
+# TAB 2: TTS
+# ==============================================================================
+with tab_tts:
+    with st.container():
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="step-badge">STEP 1 — LANGUAGE</div>', unsafe_allow_html=True)
 
-    with col_r1:
-        st.markdown(
-            f'<div class="section-label">🎙️ Transcription ({res.get("source_language", "")})</div>',
-            unsafe_allow_html=True,
+        col1_tts, col_arrow_tts, col2_tts = st.columns([5, 1, 5])
+        with col1_tts:
+            st.markdown('<div class="section-label">⌨️ Ngôn ngữ nhập</div>', unsafe_allow_html=True)
+            src_lang_name_tts = st.selectbox(
+                label="source_lang_tts",
+                options=LANG_NAMES,
+                index=0,
+                key="src_lang_tts",
+                label_visibility="collapsed",
+            )
+        with col_arrow_tts:
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center;font-size:1.5rem;color:#a78bfa;'>→</div>", unsafe_allow_html=True)
+        with col2_tts:
+            st.markdown('<div class="section-label">🔊 Tiếng nói tạo ra</div>', unsafe_allow_html=True)
+            # Default target = English
+            default_tgt = LANG_NAMES[1] if LANG_NAMES[0] == src_lang_name_tts else LANG_NAMES[0]
+            tgt_lang_name_tts = st.selectbox(
+                label="target_lang_tts",
+                options=LANG_NAMES,   # Here they can be the same if they just want TTS directly
+                index=LANG_NAMES.index(default_tgt) if default_tgt in LANG_NAMES else 0,
+                key="tgt_lang_tts",
+                label_visibility="collapsed",
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    src_code_tts = LANGUAGES[src_lang_name_tts]
+    tgt_code_tts = LANGUAGES[tgt_lang_name_tts]
+
+    with st.container():
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="step-badge">STEP 2 — TEXT</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">✍️ Nhập nội dung văn bản</div>', unsafe_allow_html=True)
+        
+        text_input = st.text_area(
+            "Nhập nội dung văn bản để chuyển thành giọng nói", 
+            placeholder="Nhập nội dung tại đây...", 
+            label_visibility="collapsed",
+            height=120,
+            key="tts_text"
         )
-        st.markdown(
-            f'<div class="result-box">{res.get("transcribed_text", "")}</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    with col_r2:
-        st.markdown(
-            f'<div class="section-label">🌍 Translation ({res.get("target_language", "")})</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div class="result-box translated">{res.get("translated_text", "")}</div>',
-            unsafe_allow_html=True,
-        )
+    with st.container():
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="step-badge">STEP 3 — GENERATE</div>', unsafe_allow_html=True)
+        
+        tts_btn = st.button("🚀 Chuyển đổi sang Giọng Nói", use_container_width=True, key="tts_btn")
 
-    # Copy-friendly text areas
-    st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("📋 Copy text"):
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            st.text_area("Transcription", value=res.get("transcribed_text", ""), height=120, key="copy_src")
-        with col_c2:
-            st.text_area("Translation", value=res.get("translated_text", ""), height=120, key="copy_tgt")
+        if tts_btn:
+            if not text_input.strip():
+                st.warning("⚠️ Vui lòng nhập văn bản.")
+            else:
+                with st.spinner("🔄 Đang xử lý giọng nói..."):
+                    try:
+                        result_tts = call_tts_api(text_input, src_code_tts, tgt_code_tts)
+                        st.session_state["last_tts_result"] = result_tts
+                        st.success("✅ Tạo giọng nói thành công!")
+                    except Exception as e:
+                        st.error(f"❌ Lỗi: {str(e)}")
+                        st.session_state.pop("last_tts_result", None)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    if "last_tts_result" in st.session_state:
+        res_tts = st.session_state["last_tts_result"]
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="step-badge">RESULT</div>', unsafe_allow_html=True)
+        
+        if src_code_tts != tgt_code_tts:
+            st.markdown(f'<div class="section-label">🌍 Translation ({res_tts.get("target_language", "")})</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="result-box translated">{res_tts.get("translated_text", "")}</div>', unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+        st.markdown('<div class="section-label">🔊 Audio Generated</div>', unsafe_allow_html=True)
+        audio_url = f'{BACKEND_URL}{res_tts.get("audio_url")}'
+        
+        st.audio(audio_url)
+        
+        # Action Links
+        col_down1, col_down2 = st.columns([1,1])
+        with col_down1:
+            st.markdown(f'<a href="{audio_url}" target="_blank" style="text-decoration: none; padding: 10px 15px; background: rgba(96, 165, 250, 0.2); color: #bae6fd; border-radius: 8px; display: inline-block;">🔗 Mở Audio trong tab mới (Copy URL)</a>', unsafe_allow_html=True)
+        with col_down2:
+            st.markdown(f'<a href="{audio_url}" download="tts_audio.mp3" style="text-decoration: none; padding: 10px 15px; background: rgba(167, 139, 250, 0.2); color: #c4b5fd; border-radius: 8px; display: inline-block;">💾 Tải xuống Audio file</a>', unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(
@@ -375,7 +436,8 @@ st.markdown(
     <div style="text-align:center;color:#475569;font-size:0.8rem;padding:0.5rem 0 1.5rem;">
         Powered by <strong style="color:#a78bfa;">Groq</strong> ·
         <strong style="color:#60a5fa;">Whisper Large v3</strong> ·
-        <strong style="color:#34d399;">LLaMA 3.3 70B</strong>
+        <strong style="color:#34d399;">LLaMA 3.3 70B</strong> ·
+        <strong style="color:#f472b6;">Edge TTS</strong>
     </div>
     """,
     unsafe_allow_html=True,
