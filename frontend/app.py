@@ -260,10 +260,12 @@ with tab_stt:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown('<div class="step-badge">STEP 2 — AUDIO</div>', unsafe_allow_html=True)
         st.markdown('<div class="section-label">📁 Nguồn âm thanh</div>', unsafe_allow_html=True)
-        input_method = st.radio("Nguồn âm thanh", ["Tải lên file", "Nhập URL"], horizontal=True, label_visibility="collapsed", key="stt_input")
+        input_method = st.radio("Nguồn âm thanh", ["Tải lên file", "Nhập URL", "Ghi âm"], horizontal=True, label_visibility="collapsed", key="stt_input")
         
         uploaded_file = None
         audio_url = ""
+        recorded_audio = None
+        
         if input_method == "Tải lên file":
             uploaded_file = st.file_uploader(
                 label="audio_uploader",
@@ -273,10 +275,12 @@ with tab_stt:
             )
             if uploaded_file:
                 st.audio(uploaded_file, format=f"audio/{uploaded_file.name.split('.')[-1]}")
-        else:
+        elif input_method == "Nhập URL":
             audio_url = st.text_input("Audio URL", placeholder="https://example.com/audio.mp3", label_visibility="collapsed", key="stt_url")
             if audio_url:
                 st.audio(audio_url)
+        else:
+            recorded_audio = st.audio_input("Ghi âm giọng nói của bạn", key="stt_record")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with st.container():
@@ -289,6 +293,8 @@ with tab_stt:
                 st.warning("⚠️ Vui lòng tải lên file âm thanh trước.")
             elif input_method == "Nhập URL" and not audio_url:
                 st.warning("⚠️ Vui lòng nhập URL âm thanh trước.")
+            elif input_method == "Ghi âm" and recorded_audio is None:
+                st.warning("⚠️ Vui lòng ghi âm giọng nói trước.")
             else:
                 with st.spinner("🔄 Đang xử lý audio..."):
                     try:
@@ -299,9 +305,12 @@ with tab_stt:
                             filename = audio_url.split("/")[-1]
                             if not filename or "." not in filename:
                                 filename = "audio_from_url.mp3"
-                        else:
+                        elif input_method == "Tải lên file":
                             audio_bytes = uploaded_file.getvalue()
                             filename = uploaded_file.name
+                        else:
+                            audio_bytes = recorded_audio.getvalue()
+                            filename = "recorded_audio.wav"
 
                         result = call_translate_api(audio_bytes, filename, src_code, tgt_code)
                         st.session_state["last_result"] = result

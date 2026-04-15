@@ -1,5 +1,5 @@
 # Frontend dependencies
-streamlit>=1.33.0
+streamlit>=1.37.0
 requests>=2.31.0
 python-dotenv
 pydub>=0.25.1
