@@ -151,7 +151,10 @@ st.markdown(
 )
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-BACKEND_URL = "http://localhost:8000"
+import os 
+from dotenv import load_dotenv , find_dotenv
+load_dotenv(find_dotenv())
+BACKEND_URL = os.getenv("BACKEND_URL")
 
 LANGUAGES = {
     "🇻🇳 Vietnamese": "vi",
