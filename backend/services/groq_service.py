@@ -61,6 +61,7 @@ async def translate_text(text: str, source_language: str, target_language: str) 
         "You are a professional translator. "
         "Your task is to translate the given text accurately and naturally. "
         "Return ONLY the translated text — no explanations, no notes, no quotation marks."
+        "If the text is Chinese, translate it to Simplified Chinese."
     )
 
     user_prompt = (
